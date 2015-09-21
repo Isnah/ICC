@@ -17,12 +17,12 @@ namespace ICC
 	
     // Payload types. Remember to edit MAX_PAYLOAD_AMOUNT_PER PACKET when adding new payload types to this enum.
 	public enum PayloadType : int {
-		Altitude = 0, Targ_dist = 1, Surf_spd = 2, Targ_spd = 3, Orb_spd = 4, Apoapsis = 5, Apoapsis_r = 6, Periapsis = 7, Periapsis_r = 8, T_t_apo= 9, T_t_peri = 10, Stage = 11, Invalid = 12
+		Altitude = 0, Targ_dist = 1, Surf_spd = 2, Targ_spd = 3, Orb_spd = 4, Apoapsis = 5, Apoapsis_r = 6, Periapsis = 7, Periapsis_r = 8, T_t_apo= 9, T_t_peri = 10, Stage = 11, SOI_Num = 12, Invalid = 13
 	}
 
     public class ICCDefines
     {
-        public static readonly int MAX_PAYLOAD_AMOUNT_PER_PACKET = 12; // All valid payloads. REMEMBER TO EDIT WHEN ADDING NEW PAYLOAD TYPES
+        public static readonly int MAX_PAYLOAD_AMOUNT_PER_PACKET = 13; // All valid payloads. REMEMBER TO EDIT WHEN ADDING NEW PAYLOAD TYPES
     }
 
 	public class ICCHelpers
@@ -32,6 +32,8 @@ namespace ICC
 			switch (type) {
 			case PayloadType.Stage:
 				return sizeof(int);
+            case PayloadType.SOI_Num:
+                return sizeof(byte);
 			default:
 				return sizeof(double);
 			}
@@ -41,60 +43,64 @@ namespace ICC
 		{
 			switch (type) {
 			case PayloadType.Altitude:
-				return "ALTXXX";
+				return "ALT";
 			case PayloadType.Apoapsis:
-				return "APOAPS";
+				return "APA";
             case PayloadType.Apoapsis_r:
-                return "APOAPR";
+                return "APR";
 			case PayloadType.Orb_spd:
-				return "ORBSPD";
+				return "OSP";
 			case PayloadType.Periapsis:
-				return "PERIAP";
+				return "PEA";
             case PayloadType.Periapsis_r:
-                return "PERIAR";
+                return "PER";
 			case PayloadType.Stage:
-				return "STAGEX";
+				return "STG";
 			case PayloadType.Surf_spd:
-				return "SRFSPD";
+				return "SSP";
 			case PayloadType.T_t_apo:
-				return "TTAPOX";
+				return "TTA";
 			case PayloadType.T_t_peri:
-				return "TTPERI";
+				return "TTP";
 			case PayloadType.Targ_dist:
-				return "TRGDST";
+				return "TDI";
 			case PayloadType.Targ_spd:
-				return "TRGSPD";
+				return "TSP";
+            case PayloadType.SOI_Num:
+                return "SOI";
 			default:
-				return "INVALX";
+				return "INV";
 			}
 		}
 
 		public static PayloadType decodeHeader (String header)
 		{
-			if ("ALTXXX".Equals (header)) {
+			if ("ALT".Equals (header)) {
 				return PayloadType.Altitude;
-			} else if ("APOAPS".Equals (header)) {
+			} else if ("APA".Equals (header)) {
 				return PayloadType.Apoapsis;
-			} else if ("ORBSPD".Equals (header)) {
+			} else if ("OSP".Equals (header)) {
 				return PayloadType.Orb_spd;
-			} else if ("PERIAP".Equals (header)) {
+			} else if ("PEA".Equals (header)) {
 				return PayloadType.Periapsis;
-			} else if ("STAGEX".Equals (header)) {
+			} else if ("STG".Equals (header)) {
 				return PayloadType.Stage;
-			} else if ("SRFSPD".Equals (header)) {
+			} else if ("SSP".Equals (header)) {
 				return PayloadType.Surf_spd;
-			} else if ("TTAPOX".Equals (header)) {
+			} else if ("TTA".Equals (header)) {
 				return PayloadType.T_t_apo;
-			} else if ("TTPERI".Equals (header)) {
+			} else if ("TTP".Equals (header)) {
 				return PayloadType.T_t_peri;
-			} else if ("TRGDST".Equals (header)) {
+			} else if ("TDS".Equals (header)) {
 				return PayloadType.Targ_dist;
-			} else if ("TRGSPD".Equals (header)) {
+			} else if ("TSP".Equals (header)) {
 				return PayloadType.Targ_spd;
-            } else if ("APOAPR".Equals (header)) {
+            } else if ("APR".Equals (header)) {
                 return PayloadType.Apoapsis_r;
-            } else if ("PERIAR".Equals (header)) {
+            } else if ("PER".Equals (header)) {
                 return PayloadType.Periapsis_r;
+            } else if ("SOI".Equals (header)) {
+                return PayloadType.SOI_Num;
 			} else {
 				return PayloadType.Invalid;
 			}
@@ -134,18 +140,22 @@ namespace ICC
             index += sizeof(UInt32);
 
 			// [header size][smallest payload size][checksum size]
-			while (index <= packet.Length - (3*sizeof(char) + sizeof(Int32) + sizeof(UInt64))) {
-				String header = System.Text.Encoding.ASCII.GetString(packet, index, 3*sizeof(char)); //see below
+			while (index <= packet.Length - (3 + sizeof(Int32) + sizeof(UInt64))) {
+				String header = System.Text.Encoding.ASCII.GetString(packet, index, 3); //see below
 				str += header + ": ";
 				PayloadType type = decodeHeader(header);
 
-				index += 3*sizeof(char); // As found in ICCOutgoing 6*sizeof(char) is twice as much as needed for 6 chars in ascii
+                index += 3; // 3 bytes needed for ASCII headers
 
 				switch(type) {
 				case PayloadType.Stage:
-                        str += (MiscUtil.Conversion.EndianBitConverter.Big.ToInt32(packet, index) + "\n");
+                    str += (MiscUtil.Conversion.EndianBitConverter.Big.ToInt32(packet, index) + "\n");
 					index += sizeof(Int32);
 					break;
+                case PayloadType.SOI_Num:
+                    str += packet[index];
+                    index += 1;
+                    break;
 				default:
                     str += (MiscUtil.Conversion.EndianBitConverter.Big.ToDouble(packet, index).ToString("F1") + "\n");
 					index += sizeof(double);
@@ -155,6 +165,51 @@ namespace ICC
 
 			return str;
 		}
+
+        public static byte SOI_to_SOI_Number(String soi)
+        {
+            String soi_lc = soi.ToLower();
+
+            switch (soi_lc)
+            {
+                case "sun":
+                    return 100;
+                case "moho":
+                    return 110;
+                case "eve":
+                    return 120;
+                case "gilly":
+                    return 121;
+                case "kerbin":
+                    return 130;
+                case "mun":
+                    return 131;
+                case "minmus":
+                    return 132;
+                case "duna":
+                    return 140;
+                case "ike":
+                    return 141;
+                case "dres":
+                    return 150;
+                case "jool":
+                    return 160;
+                case "laythe":
+                    return 161;
+                case "vall":
+                    return 162;
+                case "tylo":
+                    return 163;
+                case "bop":
+                    return 164;
+                case "pol":
+                    return 165;
+                case "eeloo":
+                    return 170;
+                default:
+                    return 0;
+            }
+        }
 	}
 }
 

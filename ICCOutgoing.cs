@@ -11,7 +11,7 @@ using KSP;
  * 
  * [Packet ID (4 Bytes)]
  * [Amount of payloads (4 Bytes)]
- * [PayloadHeader(6 bytes)][Payload(Varies)]
+ * [PayloadHeader(3 bytes)][Payload(Varies)]
  * ([PayloadHeader][Payload])
  * [Padding to make it divisible by 8]
  * [Checksum (8 Bytes)]
@@ -20,46 +20,47 @@ using KSP;
  * Payload headers: (UNDER CONSIDERATION FOR SHORTENING)
  * Headers are 6 bytes of ascii letters, as follows:
  * 
- * Altitude        = ALTXXX / ALT
- * Target distance = TRGDST / TDI
- * Surface Speed   = SRFSPD / SSP
- * Target Speed    = TRGSPD / TSP
- * Orbit Speed     = ORBSPD / OSP
- * Apoapsis Alt    = APOAPS / APO
- * Apoapsis Rad    = APOAPR / APR
- * Periapsis Alt   = PERIAP / PEA
- * Periapsis Rad   = PERIAR / PER
- * Time to Apo     = TTAPOX / TTA
- * Time to Peri    = TTPERI / TTP
- * Stage           = STAGEX / STG
+ * Altitude        = ALT
+ * Target distance = TDS
+ * Surface Speed   = SSP
+ * Target Speed    = TSP
+ * Orbit Speed     = OSP
+ * Apoapsis Alt    = APA
+ * Apoapsis Rad    = APA
+ * Periapsis Alt   = PEA
+ * Periapsis Rad   = PER
+ * Time to Apo     = TTA
+ * Time to Peri    = TTP
+ * Stage           = STG
+ * SOI number      = SOI
  * 
  * To be implemented:
  * 
- * G-Force         = GFORCE / GFO
- * Atmo density    = ATMDEN / ATM
- * Orbital period  = ORBPER / OPD
- * Altitude Ground = ALTGND / AGL
- * Latitude        = LATITD / LAT
- * Longitude       = LONGTD / LON
- * Liquid Fuel Max = LFUMAX / LFM
- * LiFuel Current  = LFUCUR / LFC
- * Oxidizer Nax    = OXIMAX / OXM
- * Oxidizer Curr   = OXICUR / OXC
- * ElCharge Max    = ELCMAX / ECM
- * ElCharge Curr   = ELCCUR / ECC
- * Monoprop Max    = MONMAX / MPM
- * Monoprop Curr   = MONCUR / MPC
- * Intake Air Max  = INAMAX / IAM
- * Intake Air Curr = INACUR / IAC
- * Solid Fuel Max  = SFUMAX / SFM
- * Solid Fuel Curr = SFUCUR / SFC
- * Xenon Gas Max   = XEGMAX / XGM
- * Xenon Gas Curr  = XEGCUR / XGC
- * SOI number      = SOINUM / SOI
+ * G-Force         = GFO
+ * Atmo density    = ATM
+ * Orbital period  = OPE
+ * Altitude Ground = AGL
+ * Latitude        = LAT
+ * Longitude       = LON
+ * Liquid Fuel Max = LFM
+ * LiFuel Current  = LFC
+ * Oxidizer Nax    = OXM
+ * Oxidizer Curr   = OXC
+ * ElCharge Max    = ECM
+ * ElCharge Curr   = ECC
+ * Monoprop Max    = MPM
+ * Monoprop Curr   = MPC
+ * Intake Air Max  = IAM
+ * Intake Air Curr = IAC
+ * Solid Fuel Max  = SFM
+ * Solid Fuel Curr = SFC
+ * Xenon Gas Max   = XGM
+ * Xenon Gas Curr  = XGC
+
  * 
  * Might be implemented:
  * 
- * Mission time    = MTIMEX / MTX
+ * Mission time    = MTX
  * 
  */
 
@@ -72,7 +73,7 @@ namespace ICC
 		{
 			public static UInt32 packet_counter = 0;
 
-            public static bool[] payload_switch_list = { true, false, true, false, true, true, false, true, false, false, false, true };
+            public static bool[] payload_switch_list = { true, false, true, false, true, true, false, true, false, false, false, true, true };
             /*
              * THE FOLLOWING COMMENTED OUT CODE ILLUSTRATES THE ABOVE ARRAY
              * THE VALUES ARE IN ORDER OF PayloadType IN ICCHelpers
@@ -110,6 +111,7 @@ namespace ICC
             public static double prev_t_t_apo   = -1.0;
             public static double prev_t_t_peri  = -1.0;
             public static int    prev_stage     = -1;
+            public static byte   prev_soi       =  0;
 
             public static readonly double ALTITUDE_APPROX_EQUALITY = 0.5;
             public static readonly double SPEED_APPROX_EQUALITY    = 0.1;
@@ -180,7 +182,7 @@ namespace ICC
             size += sizeof(UInt32); // Room for payload amount information
 
 			for (uint i = 0; i < payloads.Length; ++i) {
-				size += 3 * sizeof(char); // 6*sizeof(char) = 12 bytes, while the string of 6 chars takes 6 bytes. Presumably due it being encoded with ASCII rather than unicode
+				size += 3; // 3 bytes is required for the three letter ASCII headers
 				size += ICCHelpers.getsize (payloads [i]);
 			}
 
@@ -260,6 +262,10 @@ namespace ICC
                 return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes(FlightGlobals.ActiveVessel.orbit.timeToPe);
 			case PayloadType.Stage:
                 return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes(FlightGlobals.ActiveVessel.currentStage);
+            case PayloadType.SOI_Num:
+                byte[] payload = new byte[1];
+                payload[0] = ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
+                return payload;
 			default:
 				print("[ICC] Unused PayloadType in createPayload()");
 				return new Byte[sizeof(double)];
@@ -346,6 +352,8 @@ namespace ICC
                     return true;
                 case PayloadType.Targ_spd:
                     return Math.Abs(Attributes.prev_targ_spd - FlightGlobals.ship_tgtSpeed) < Attributes.SPEED_APPROX_EQUALITY;
+                case PayloadType.SOI_Num:
+                    return Attributes.prev_soi == ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
                 default:
                     print("[ICC] ERROR. Trying to check attribute equality with invalid payload type");
                     return true;
@@ -393,6 +401,9 @@ namespace ICC
                         break;
                     case PayloadType.Targ_spd:
                         Attributes.prev_targ_spd = FlightGlobals.ship_tgtSpeed;
+                        break;
+                    case PayloadType.SOI_Num:
+                        Attributes.prev_soi = ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
                         break;
                     default:
                         print("[ICC] ERROR. Trying to update invalid payload type");
