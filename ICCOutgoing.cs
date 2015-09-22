@@ -17,11 +17,11 @@ using KSP;
  * [Checksum (8 Bytes)]
  * 
  * 
- * Payload headers: (UNDER CONSIDERATION FOR SHORTENING)
- * Headers are 6 bytes of ascii letters, as follows:
+ * Payload headers:
+ * Headers are 3 bytes of ascii letters, as follows:
  * 
  * Altitude        = ALT
- * Target distance = TDS
+ * Target distance = TDS // Not fully implemented
  * Surface Speed   = SSP
  * Target Speed    = TSP
  * Orbit Speed     = OSP
@@ -33,15 +33,17 @@ using KSP;
  * Time to Peri    = TTP
  * Stage           = STG
  * SOI number      = SOI
+ * Latitude        = LAT
+ * Longitude       = LON
+ * Orbital period  = OPE
+ * G-Force         = GFO
+ * Altitude Ground = AGL
+ * 
+ * Being Implemented
  * 
  * To be implemented:
  * 
- * G-Force         = GFO
  * Atmo density    = ATM
- * Orbital period  = OPE
- * Altitude Ground = AGL
- * Latitude        = LAT
- * Longitude       = LON
  * Liquid Fuel Max = LFM
  * LiFuel Current  = LFC
  * Oxidizer Nax    = OXM
@@ -73,7 +75,7 @@ namespace ICC
 		{
 			public static UInt32 packet_counter = 0;
 
-            public static bool[] payload_switch_list = { true, false, true, false, true, true, false, true, false, false, false, true, true };
+            public static bool[] payload_switch_list = { true, false, true, false, true, true, false, true, false, false, false, true, true, true, true, true, true, false };
             /*
              * THE FOLLOWING COMMENTED OUT CODE ILLUSTRATES THE ABOVE ARRAY
              * THE VALUES ARE IN ORDER OF PayloadType IN ICCHelpers
@@ -89,6 +91,12 @@ namespace ICC
 			public static bool t_t_apo   = false;
 			public static bool t_t_peri  = false;
 			public static bool stage     = true;
+            ------------------ soi       = true;
+            ------------------ latitude  = true;
+            ------------------ latitude  = true;
+            ------------------ orb_per   = true;
+            ------------------ gee_force = true;
+            ------------------ terr_alt  = false;
             */
 
             public static string port_name = "COM4";    // CHANGE THESE
@@ -98,7 +106,7 @@ namespace ICC
             public static DateTime prev_time   = new DateTime(2015, 1, 1);  // Previous time a packet was sent, initially instantiated at 1/1/2010
 
 
-            // Previous values so we know we need to send new values.
+            // Previous values so we know whether we'll need to send new values.
             public static double prev_altitude  = -1.0;
             public static double prev_targ_dist = -1.0;
             public static double prev_surf_spd  = -1.0;
@@ -112,10 +120,17 @@ namespace ICC
             public static double prev_t_t_peri  = -1.0;
             public static int    prev_stage     = -1;
             public static byte   prev_soi       =  0;
+            public static float  prev_latitude  = -361.0f;
+            public static float  prev_longitude = -361.0f;
+            public static double prev_orb_per   = -1.0;
+            public static double prev_gee_force = -1.0;
+            // previous terrain altitude not needed
 
+            // The difference needed for a new item to be considered different enough to resend.
             public static readonly double ALTITUDE_APPROX_EQUALITY = 0.5;
             public static readonly double SPEED_APPROX_EQUALITY    = 0.1;
-            public static readonly double GAME_TIME_APPROX_EQUAL   = 0.5;
+            public static readonly double GAME_TIME_APPROX_EQUAL   = 1.0;
+            public static readonly double DEGREES_APPROX_EQUALITY  = 0.1;
 		}
 
         private OpenNETCF.IO.Ports.SerialPort port = null;
@@ -266,8 +281,20 @@ namespace ICC
                 byte[] payload = new byte[1];
                 payload[0] = ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
                 return payload;
+            case PayloadType.Latitude:
+                return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes((float)FlightGlobals.ActiveVessel.latitude);
+            case PayloadType.Longitude:
+                return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes((float)FlightGlobals.ActiveVessel.longitude);
+            case PayloadType.Orbital_period:
+                return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes(FlightGlobals.ActiveVessel.orbit.period);
+            case PayloadType.Gee_force:
+                return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes(FlightGlobals.ActiveVessel.geeForce);
+            case PayloadType.Terrain_altitude:
+                double agl = FlightGlobals.ActiveVessel.altitude - FlightGlobals.ActiveVessel.terrainAltitude;
+                if (agl > FlightGlobals.ActiveVessel.altitude) agl = FlightGlobals.ActiveVessel.altitude; // If the terrain is lower than sea level, set agl to altitude above sea level
+                return MiscUtil.Conversion.EndianBitConverter.Big.GetBytes(agl);
 			default:
-				print("[ICC] Unused PayloadType in createPayload()");
+				print("[ICC] ERROR. Unused PayloadType in createPayload()");
 				return new Byte[sizeof(double)];
 			}
 		}
@@ -328,6 +355,7 @@ namespace ICC
             switch (type)
             {
                 case PayloadType.Altitude:
+                case PayloadType.Terrain_altitude:
                     return Math.Abs(Attributes.prev_altitude - FlightGlobals.ActiveVessel.altitude) < Attributes.ALTITUDE_APPROX_EQUALITY;
                 case PayloadType.Apoapsis:
                     return Math.Abs(Attributes.prev_apoapsis - FlightGlobals.ActiveVessel.orbit.ApA) < Attributes.ALTITUDE_APPROX_EQUALITY;
@@ -354,6 +382,14 @@ namespace ICC
                     return Math.Abs(Attributes.prev_targ_spd - FlightGlobals.ship_tgtSpeed) < Attributes.SPEED_APPROX_EQUALITY;
                 case PayloadType.SOI_Num:
                     return Attributes.prev_soi == ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
+                case PayloadType.Latitude:
+                    return Math.Abs(Attributes.prev_latitude - FlightGlobals.ActiveVessel.latitude) < Attributes.DEGREES_APPROX_EQUALITY;
+                case PayloadType.Longitude:
+                    return Math.Abs(Attributes.prev_longitude - FlightGlobals.ActiveVessel.longitude) < Attributes.DEGREES_APPROX_EQUALITY;
+                case PayloadType.Orbital_period:
+                    return Math.Abs(Attributes.prev_orb_per - FlightGlobals.ActiveVessel.orbit.period) < Attributes.GAME_TIME_APPROX_EQUAL;
+                case PayloadType.Gee_force:
+                    return Math.Abs(Attributes.prev_gee_force - FlightGlobals.ActiveVessel.geeForce) < Attributes.SPEED_APPROX_EQUALITY;
                 default:
                     print("[ICC] ERROR. Trying to check attribute equality with invalid payload type");
                     return true;
@@ -367,6 +403,7 @@ namespace ICC
                 switch (payloads[i])
                 {
                     case PayloadType.Altitude:
+                    case PayloadType.Terrain_altitude:
                         Attributes.prev_altitude = FlightGlobals.ActiveVessel.altitude;
                         break;
                     case PayloadType.Apoapsis:
@@ -404,6 +441,18 @@ namespace ICC
                         break;
                     case PayloadType.SOI_Num:
                         Attributes.prev_soi = ICCHelpers.SOI_to_SOI_Number(FlightGlobals.ActiveVessel.orbit.referenceBody.name);
+                        break;
+                    case PayloadType.Latitude:
+                        Attributes.prev_latitude = (float)FlightGlobals.ActiveVessel.latitude;
+                        break;
+                    case PayloadType.Longitude:
+                        Attributes.prev_longitude = (float)FlightGlobals.ActiveVessel.longitude;
+                        break;
+                    case PayloadType.Orbital_period:
+                        Attributes.prev_orb_per = FlightGlobals.ActiveVessel.orbit.period;
+                        break;
+                    case PayloadType.Gee_force:
+                        Attributes.prev_gee_force = FlightGlobals.ActiveVessel.geeForce;
                         break;
                     default:
                         print("[ICC] ERROR. Trying to update invalid payload type");

@@ -17,12 +17,13 @@ namespace ICC
 	
     // Payload types. Remember to edit MAX_PAYLOAD_AMOUNT_PER PACKET when adding new payload types to this enum.
 	public enum PayloadType : int {
-		Altitude = 0, Targ_dist = 1, Surf_spd = 2, Targ_spd = 3, Orb_spd = 4, Apoapsis = 5, Apoapsis_r = 6, Periapsis = 7, Periapsis_r = 8, T_t_apo= 9, T_t_peri = 10, Stage = 11, SOI_Num = 12, Invalid = 13
+		Altitude = 0, Targ_dist = 1, Surf_spd = 2, Targ_spd = 3, Orb_spd = 4, Apoapsis = 5, Apoapsis_r = 6, Periapsis = 7, Periapsis_r = 8, T_t_apo= 9, T_t_peri = 10, Stage = 11, 
+        SOI_Num = 12, Latitude = 13, Longitude = 14, Orbital_period = 15, Gee_force = 16, Terrain_altitude = 17, Invalid = 18
 	}
 
     public class ICCDefines
     {
-        public static readonly int MAX_PAYLOAD_AMOUNT_PER_PACKET = 13; // All valid payloads. REMEMBER TO EDIT WHEN ADDING NEW PAYLOAD TYPES
+        public static readonly int MAX_PAYLOAD_AMOUNT_PER_PACKET = 18; // All valid payloads. REMEMBER TO EDIT WHEN ADDING NEW PAYLOAD TYPES
     }
 
 	public class ICCHelpers
@@ -34,6 +35,9 @@ namespace ICC
 				return sizeof(int);
             case PayloadType.SOI_Num:
                 return sizeof(byte);
+            case PayloadType.Latitude:
+            case PayloadType.Longitude:
+                return sizeof(float);
 			default:
 				return sizeof(double);
 			}
@@ -68,6 +72,16 @@ namespace ICC
 				return "TSP";
             case PayloadType.SOI_Num:
                 return "SOI";
+            case PayloadType.Latitude:
+                return "LAT";
+            case PayloadType.Longitude:
+                return "LON";
+            case PayloadType.Orbital_period:
+                return "OPE";
+            case PayloadType.Gee_force:
+                return "GFO";
+            case PayloadType.Terrain_altitude:
+                return "AGL";
 			default:
 				return "INV";
 			}
@@ -101,9 +115,19 @@ namespace ICC
                 return PayloadType.Periapsis_r;
             } else if ("SOI".Equals (header)) {
                 return PayloadType.SOI_Num;
-			} else {
-				return PayloadType.Invalid;
-			}
+            } else if ("LAT".Equals (header)) {
+                return PayloadType.Latitude;
+            } else if ("LON".Equals (header)) {
+                return PayloadType.Longitude;
+            } else if ("OPE".Equals (header)) {
+                return PayloadType.Orbital_period;
+            } else if ("OPE".Equals (header)) {
+                return PayloadType.Gee_force;
+            } else if ("AGL".Equals (header)) {
+                return PayloadType.Terrain_altitude;
+            } else {
+                return PayloadType.Invalid;
+            }
 		}
 
 		// Will always return 8 bytes.
@@ -155,6 +179,11 @@ namespace ICC
                 case PayloadType.SOI_Num:
                     str += packet[index];
                     index += 1;
+                    break;
+                case PayloadType.Latitude:
+                case PayloadType.Longitude:
+                    str += (MiscUtil.Conversion.EndianBitConverter.Big.ToSingle(packet, index).ToString("F1") + "\n");
+                    index += sizeof(float);
                     break;
 				default:
                     str += (MiscUtil.Conversion.EndianBitConverter.Big.ToDouble(packet, index).ToString("F1") + "\n");
